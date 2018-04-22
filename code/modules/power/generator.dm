@@ -22,12 +22,15 @@
 	var/lastgen2 = 0
 	var/effective_gen = 0
 	var/lastgenlev = 0
+	var/health = 250
+	var/max_health = 250
 
 /obj/machinery/power/generator/New()
 	..()
 	desc = initial(desc) + " Rated for [round(max_power/1000)] kW."
 	spawn(1)
 		reconnect()
+	health = max_health
 
 //generators connect in dir and reverse_dir(dir) directions
 //mnemonic to determine circulator/generator directions: the cirulators orbit clockwise around the generator
@@ -58,9 +61,10 @@
 /obj/machinery/power/generator/update_icon()
 	if(stat & (NOPOWER|BROKEN))
 		overlays.Cut()
+		icon_state = "teg-broken"
 	else
 		overlays.Cut()
-
+		icon_state = "teg"
 		if(lastgenlev != 0)
 			overlays += image('icons/obj/power.dmi', "teg-op[lastgenlev]")
 
@@ -70,6 +74,11 @@
 		return
 
 	updateDialog()
+
+	if(health < 0)
+		health = 0
+	overload_check()
+	fail_check()
 
 	var/datum/gas_mixture/air1 = circ1.return_transfer_air()
 	var/datum/gas_mixture/air2 = circ2.return_transfer_air()
@@ -150,6 +159,13 @@
 		else
 			disconnect_from_network()
 		reconnect()
+	if(health < max_health)
+		if(isCoil(W))
+			var/obj/item/stack/cable_coil/coil = W
+			user.visible_message("[user.name] repairs some of the damage to the [src].")
+			if(coil.use(10))
+				health += 25
+				fix_check()
 	else
 		..()
 
@@ -230,3 +246,25 @@
 		return
 
 	src.set_dir(turn(src.dir, -90))
+
+/obj/machinery/power/generator/proc/overload_check()
+	if(effective_gen > max_power && prob(5))
+		playsound(src.loc, 'sound/effects/compbeep5.ogg', 75, 1)
+		src.visible_message("<span class=\"warning\">[src] beeps loudly, flashing warnings on it's display!</span>")
+		health -= 50 //+1 is to prevent div by zero errors.
+
+/obj/machinery/power/generator/proc/fail_check()
+	if(health <= 0)
+		health = 0
+		stat = BROKEN
+		src.visible_message("<span class=\"warning\">[src] begins to spew sparks, flashing warnings on it's display before shutting down with a loud grinding noise!</span>")
+		playsound(src.loc, 'sound/machines/apc_nopower.ogg', 75, 1)
+		update_icon()
+		overlays.Cut()
+
+/obj/machinery/power/generator/proc/fix_check()
+	if(health == max_health)
+		stat = 0
+		src.visible_message("<span class=\"good\">[src] hums softly, begining to come back online.</span>")
+		playsound(src.loc, 'sound/machines/ping.ogg', 75, 1)
+		update_icon()
